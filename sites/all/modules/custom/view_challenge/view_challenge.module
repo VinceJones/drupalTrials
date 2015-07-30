@@ -1,0 +1,88 @@
+<?php
+
+/**
+ * Implements hook_help().
+ */
+/**
+ * Implements hook_help().
+ */
+function view_challenge_help($path, $arg) {
+  switch ($path) {
+    case "admin/help#view_challenge":
+      return '<p>' . t("Displays links to nodes created on this date") . '</p>';
+      break;
+  }
+}
+
+/**
+ * Implements hook_block_info().
+ */
+function view_challenge_block_info() {
+  $blocks['view_challenge'] = array(
+    // the name that will appear in the block list.
+    'info' => t('View Challenge'),
+    // Default setting
+    'cache' => DRUPAL_CACHE_PER_ROLE,
+  );
+  return $blocks;
+}
+
+/**
+ * Custom Content Function to get posts from the last week
+ */
+function view_challenge_contents() {
+  $today = getdate();
+  $start_time = mktime(0,0,0,$today['mon'], ($today['mday']-7), $today['year']);
+  $end_time = time();
+
+  // Use DB API to get current posts
+  $query = db_select('node', 'n')
+    ->fields('n', array('nid', 'title', 'created'))
+    ->condition('status', 1) // Published
+    ->condition('created', array($start_time, $end_time), 'BETWEEN')
+    ->orderBy('created', 'DESC') // Most Recent First
+    ->execute();
+
+//  $query = new EntityFieldQuery();
+//  $query
+//    ->entityCondition('entity_type', 'node')
+//    ->propertyCondition('status', 1)
+//    ->propertyCondition('created', array($start_time, $end_time), 'BETWEEN' )
+//    ->execute();
+
+//  if (isset($query['node'])) {
+//    $news_items_nids = array_keys($query['node']);
+//    //$news_items = entity_load('node', $news_items_nids);
+//  }
+
+  //$node = node_load($nid);
+  return $query;
+}
+
+/**
+ * Implements hook_block_view().
+ */
+function view_challenge_block_view($delta = '') {
+  switch ($delta) {
+    case 'view_challenge':
+      $block['subject'] = t('View Challenge');
+
+      $queryResults = view_challenge_contents();
+      $items = array();
+
+      foreach ($queryResults as $node) {
+        $items[] = array(
+          'data' => l($node->title, 'node/' . $node->nid),
+        );
+      }
+
+      if (empty($items)) {
+        $block['content'] = t('No posts available');
+      } else {
+        $block['content'] = theme('item_list', array('items' => $items));
+      }
+  }
+  return $block;
+}
+
+
