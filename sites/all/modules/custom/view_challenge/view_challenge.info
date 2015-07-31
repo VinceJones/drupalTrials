@@ -1,3 +1,4 @@
 name = View Challenge
 description = Load a node to be viewed an load a second node
 core = 7.x
+configure = admin/config/content/view_challenge
