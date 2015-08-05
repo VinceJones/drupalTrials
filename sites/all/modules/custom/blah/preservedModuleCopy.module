@@ -1,0 +1,227 @@
+<?php
+
+/**
+ * Implements hook_help().
+ */
+/**
+ * Implements hook_help().
+ */
+function view_challenge_help($path, $arg) {
+  switch ($path) {
+    case "admin/help#view_challenge":
+      return '<p>' . t("Displays links to nodes created on this date") . '</p>';
+      break;
+  }
+}
+
+/**
+ * Implements hook_block_info().
+ */
+function view_challenge_block_info() {
+  $blocks['view_challenge'] = array(
+    // the name that will appear in the block list.
+    'info' => t('View Challenge'),
+    // Default setting
+    'cache' => DRUPAL_CACHE_PER_ROLE,
+  );
+  return $blocks;
+}
+
+/**
+ * Custom Content Function to get posts from the last week
+ */
+function view_challenge_contents($display) {//
+  $today = getdate();
+  $start_time = mktime(0, 0, 0, $today['mon'], ($today['mday'] - 7), $today['year']);
+  $end_time = time();
+  $max_num = variable_get('view_challenge_max', 3);
+
+  // Use DB API to get current posts
+  $query = db_select('node', 'n')
+    ->fields('n', array('nid', 'title', 'created'))
+    ->condition('status', 1)// Published
+    ->condition('created', array($start_time, $end_time), 'BETWEEN')
+    ->orderBy('created', 'DESC');
+
+  //if ($display === 'block') {
+  $query->range(0, $max_num);
+  //}
+  $result = $query->execute();
+  return $result;
+}
+
+
+
+//  $efq = new EntityFieldQuery();
+//  $efq
+//    ->entityCondition('entity_type', 'node')
+//    ->propertyCondition('status', 1)
+//    ->propertyCondition('created', array($start_time, $end_time), 'BETWEEN' );
+//
+//  $result = $efq->execute();
+//
+//  if (isset($result['node'])) {
+//    $node_nids = array_keys($result['node']);
+//    $nodes = entity_load('node', $node_nids);
+//  }
+//
+//  return $nodes;
+
+
+/**
+ * Implements hook_block_view().
+ */
+function view_challenge_block_view($delta = '') {
+  switch ($delta) {
+    case 'view_challenge':
+      $block['subject'] = t('View Challenge');
+
+      /** @var stdClass[] $node_set */
+      $node_set = view_challenge_contents('block');
+      $items = array();
+
+      foreach ($node_set as $node) {
+        $items[] = array(
+          'data' => l($node->title, 'node/' . $node->nid),
+        );
+      }
+
+      if (empty($items)) {
+        $block['content'] = t('No posts available');
+      } else {
+        $block['content'] = theme('item_list', array('items' => $items));
+      }
+  }
+  return $block;
+}
+
+/**
+ * Implements hook_menu().
+ */
+function view_challenge_menu() {
+  $items = array();
+
+  /*
+   * Path is being added to admin/config
+   * The other set of arguments instead of content are:
+   *    (content, date, development, media, people, regional,
+   *    search, services, system, user-interface)
+   * And the view_challenge as a unique identifier
+   */
+  $items['view_challenge'] = array(
+    'title' => 'View Challenge',
+    //'description' => 'Configuration for View Challenge module',
+    'page callback' => '_view_challenge_page', //'drupal_get_form',
+    //'page arguments' => array('view_challenge_form'),
+    'access arguments' => array('access view_challenge content'),
+    'type' => MENU_NORMAL_ITEM
+  );
+  return $items;
+}
+
+/**
+ * Implements hook_form().
+ */
+function view_challenge_form($form, &$form_state) {
+  $form['view_challenge_max'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Maximum number of posts'),
+    '#default_value' => variable_get('view_challenge_max', 3),
+    '#size' => 2,
+    '#maxlength' => 2,
+    '#description' => t('The maximum number of links to display in the block.'),
+    '#required' => TRUE
+  );
+  return system_settings_form($form);
+}
+
+/*
+ * Implements validation from the Form API
+ */
+function view_challenge_form_validate($form, &$form_state) {
+  if (!empty($form_state['value'])){
+    $max_num = $form_state['value']['view_challenge_max'];
+    if (!is_numeric($max_num)) {
+      form_set_error('view_challenge_max',
+        t('You must enter a number for the maximum number of posts to display.'));
+    } elseif ($max_num <= 0) {
+      form_set_error('view_challenge_max',
+        t('Maximum number of posts to display must be positive'));
+    }
+  }
+}
+
+/**
+ * Implements hook_permission().
+ */
+function view_challenge_permission() {
+  return array(
+    'access view_challenge content' => array(
+      'title' => t('Access content for the View Challenge module')
+    )
+  );
+}
+
+function _view_challenge_page() {
+  $result = view_challenge_contents('page');
+  $items = array();
+
+  foreach($result as $node) {
+    $items[] = l($node->title, 'node/'.$node->nid);
+
+  }
+
+  if (empty($items)) {
+    $page_array['view_challenge_arguments'] = array(
+      '#title' => t('All posts from the last week'),
+      '#markup' => t('No posts available')
+    );
+
+  } else {
+    $page_array['view_challenge_arguments'] = array(
+      '#title' => t('All posts from the last week'),
+      '#items' => $items,
+      '#form_block' => drupal_get_form('view_challenge_form'),
+      '#theme' => 'item_list__view_challenge'
+    );
+  }
+
+  return $page_array;
+}
+
+/**
+ * Implements hook_theme().
+ */
+function view_challenge_theme($existing, $type, $theme, $path) {
+  return array(
+    'item_list__view_challenge' => array(
+      'template' => 'item-list--view-challenge',
+      'path' => $path . '/templates',
+      'variables' => array(
+        'items' => array(),
+        'form_block' => array()
+      )
+    )
+  );
+}
+
+/**
+ * Look these up as http://dgo.to/<MODULENAME>
+ */
+
+
+// entityreference
+// entity_embed
+// views
+// link
+// elements
+// entity
+// date
+// EntityMetadataWrapper
+
+
+
+
+
+
+

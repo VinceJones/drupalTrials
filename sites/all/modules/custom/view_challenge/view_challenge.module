@@ -1,227 +1,191 @@
 <?php
+  class NextNodeFindQuery extends EntityFieldQuery {
 
-/**
- * Implements hook_help().
- */
-/**
- * Implements hook_help().
- */
-function view_challenge_help($path, $arg) {
-  switch ($path) {
-    case "admin/help#view_challenge":
-      return '<p>' . t("Displays links to nodes created on this date") . '</p>';
-      break;
-  }
-}
+    public function __contruct() {
+      $this->entityCondition('entity_type', 'node');
+    }
 
-/**
- * Implements hook_block_info().
- */
-function view_challenge_block_info() {
-  $blocks['view_challenge'] = array(
-    // the name that will appear in the block list.
-    'info' => t('View Challenge'),
-    // Default setting
-    'cache' => DRUPAL_CACHE_PER_ROLE,
-  );
-  return $blocks;
-}
+    public function select_article($nodeId) {
+      $this->propertyCondition('nid', $nodeId);
 
-/**
- * Custom Content Function to get posts from the last week
- */
-function view_challenge_contents($display) {//
-  $today = getdate();
-  $start_time = mktime(0, 0, 0, $today['mon'], ($today['mday'] - 7), $today['year']);
-  $end_time = time();
-  $max_num = variable_get('view_challenge_max', 3);
-
-  // Use DB API to get current posts
-  $query = db_select('node', 'n')
-    ->fields('n', array('nid', 'title', 'created'))
-    ->condition('status', 1)// Published
-    ->condition('created', array($start_time, $end_time), 'BETWEEN')
-    ->orderBy('created', 'DESC');
-
-  //if ($display === 'block') {
-      $query->range(0, $max_num);
-  //}
-  $result = $query->execute();
-  return $result;
-}
-
-
-
-//  $efq = new EntityFieldQuery();
-//  $efq
-//    ->entityCondition('entity_type', 'node')
-//    ->propertyCondition('status', 1)
-//    ->propertyCondition('created', array($start_time, $end_time), 'BETWEEN' );
-//
-//  $result = $efq->execute();
-//
-//  if (isset($result['node'])) {
-//    $node_nids = array_keys($result['node']);
-//    $nodes = entity_load('node', $node_nids);
-//  }
-//
-//  return $nodes;
-
-
-/**
- * Implements hook_block_view().
- */
-function view_challenge_block_view($delta = '') {
-  switch ($delta) {
-    case 'view_challenge':
-      $block['subject'] = t('View Challenge');
-
-      /** @var stdClass[] $node_set */
-      $node_set = view_challenge_contents('block');
-      $items = array();
-
-      foreach ($node_set as $node) {
-        $items[] = array(
-          'data' => l($node->title, 'node/' . $node->nid),
-        );
-      }
-
-      if (empty($items)) {
-        $block['content'] = t('No posts available');
+      if (!node_load($nodeId + 1)) {
+        $this->propertyCondition('nid',1);
       } else {
-        $block['content'] = theme('item_list', array('items' => $items));
+        $this->propertyCondition('nid', $nodeId + 1);
       }
-  }
-  return $block;
-}
+    }
 
+    public function getResults() {
+      $efqResults = $this->execute();
+      if (empty($efqResults)) {
+        return array();
+      }
+      return array_keys($efqResults['node']);
+    }
+  }
 /**
  * Implements hook_menu().
+ *
+ * Build a Menu Item to link to Custom Page
  */
 function view_challenge_menu() {
   $items = array();
-
-  /*
-   * Path is being added to admin/config
-   * The other set of arguments instead of content are:
-   *    (content, date, development, media, people, regional,
-   *    search, services, system, user-interface)
-   * And the view_challenge as a unique identifier
-   */
   $items['view_challenge'] = array(
     'title' => 'View Challenge',
-    //'description' => 'Configuration for View Challenge module',
-    'page callback' => '_view_challenge_page', //'drupal_get_form',
-    //'page arguments' => array('view_challenge_form'),
+    'description' => 'Configuration for View Challenge module',
+    'page callback' => '_view_challenge_page',
     'access arguments' => array('access view_challenge content'),
     'type' => MENU_NORMAL_ITEM
   );
   return $items;
 }
 
+
+/**
+ * Custom Content Function to select article from user input
+ */
+function view_challenge_contents() {
+  $nodes = array();
+  $user_input = variable_get('view_challenge_select_article', 3);
+
+//  $query = new NextNodeFindQuery();
+//  $query->select_article($user_input);
+//  $query_result = $query->getResults();
+
+  $query = new EntityFieldQuery();
+  $query
+    ->entityCondition('entity_type', 'node')
+    ->propertyCondition('nid', $user_input)
+    ->propertyCondition('nid', $user_input + 1);
+  $qr = $query->execute();
+  $query_result = $qr['node'];
+
+  if ($query_result != null) {
+    $ids = array_keys($query_result);
+    $nodes = entity_load('node', $ids);
+  }
+
+  return $nodes;
+}
+
+
 /**
  * Implements hook_form().
+ *
+ * User inputs a number to pull up a node
  */
 function view_challenge_form($form, &$form_state) {
-  $form['view_challenge_max'] = array(
+  $form['user_selected_node'] = array(
     '#type' => 'textfield',
-    '#title' => t('Maximum number of posts'),
-    '#default_value' => variable_get('view_challenge_max', 3),
+    '#title' => t('Choose a post number to view'),
+    '#default_value' => variable_get('view_challenge_select_article', 3),
     '#size' => 2,
     '#maxlength' => 2,
     '#description' => t('The maximum number of links to display in the block.'),
     '#required' => TRUE
   );
-  return system_settings_form($form);
+  return $form;
 }
 
-/*
+
+/**
  * Implements validation from the Form API
+ *
+ * @var int $select_node
+ *
  */
 function view_challenge_form_validate($form, &$form_state) {
   if (!empty($form_state['value'])){
-    $max_num = $form_state['value']['view_challenge_max'];
-    if (!is_numeric($max_num)) {
-      form_set_error('view_challenge_max',
+    $select_node = $form_state['value']['user_selected_node'];
+
+    if (!is_numeric($select_node)) {
+      form_set_error('view_challenge_select_article',
         t('You must enter a number for the maximum number of posts to display.'));
-    } elseif ($max_num <= 0) {
-      form_set_error('view_challenge_max',
+
+    } elseif ($select_node <= 0) {
+      form_set_error('view_challenge_select_article',
         t('Maximum number of posts to display must be positive'));
     }
   }
 }
 
-/**
- * Implements hook_permission().
- */
-function view_challenge_permission() {
-  return array(
-    'access view_challenge content' => array(
-      'title' => t('Access content for the View Challenge module')
-    )
-  );
-}
 
+/**
+ * Custom Page Build
+ *
+ *
+ */
 function _view_challenge_page() {
-  $result = view_challenge_contents('page');
+
+  ///////////////////////////////////////////////////
+  // Get the User Selected Article and build display
+  ///////////////////////////////////////////////////
+  $query_result = view_challenge_contents();
+
   $items = array();
 
-  foreach($result as $node) {
-    $items[] = l($node->title, 'node/'.$node->nid);
-
+  foreach($query_result as $node) {
+    $items[] = l("Post #".$node->nid." ".$node->title, 'node/'.$node->nid);
   }
 
-  if (empty($items)) {
-    $page_array['view_challenge_arguments'] = array(
-      '#title' => t('All posts from the last week'),
-      '#markup' => t('No posts available')
-    );
+  ///////////////////////////////////////////////////
+  // Get Total amount of Articles, if user input is
+  // greater than the biggest node id, display a
+  // error message
+  ///////////////////////////////////////////////////
+  $query = new EntityFieldQuery();
+  $query->entityCondition('entity_type', 'node');
+  $result = $query->execute();
+//  $query = new NextNodeFindQuery();
+//  $result = $query->getResults();
 
-  } else {
-    $page_array['view_challenge_arguments'] = array(
-      '#title' => t('All posts from the last week'),
-      '#items' => $items,
-      '#form_block' => drupal_get_form('view_challenge_form'),
-      '#theme' => 'item_list__view_challenge'
-    );
+  if (count($items) < 2) {
+    $items = array('Post does not exist, please choose a number equal to or '.
+      'lower than '.count($result['node']));
   }
+
+  ///////////////////////////////////////////////////
+  // Build a form
+  ///////////////////////////////////////////////////
+  $form_state = array(
+    'rebuild' => true,
+    'cache' => true
+  );
+  $form = drupal_build_form('view_challenge_form', $form_state);
+  $form_errors = form_set_error();
+
+  if (!empty($form_errors)) {
+    $items = array('No article is available');
+  }
+
+  ///////////////////////////////////////////////////
+  // Page items
+  ///////////////////////////////////////////////////
+  $page_array['view_challenge_arguments'] = array(
+    '#title' => t('All posts from the last week'),
+    '#items' => $items,
+    '#form_block' => $form,
+    '#theme' => 'select_article__view_challenge'
+  );
+
 
   return $page_array;
 }
 
 /**
  * Implements hook_theme().
+ *
+ * Custom Theme used with select-article--view-challenge.tpl.php
  */
 function view_challenge_theme($existing, $type, $theme, $path) {
   return array(
-    'item_list__view_challenge' => array(
-      'template' => 'item-list--view-challenge',
+    'select_article__view_challenge' => array(
+      'template' => 'select-article--view-challenge',
       'path' => $path . '/templates',
       'variables' => array(
         'items' => array(),
-        'form_block' => array()
+        'form_block' => array(),
       )
     )
   );
 }
-
-/**
- * Look these up as http://dgo.to/<MODULENAME>
- */
-
-
-// entityreference
-// entity_embed
-// views
-// link
-// elements
-// entity
-// date
-// EntityMetadataWrapper
-
-
-
-
-
-
-

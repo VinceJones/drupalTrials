@@ -1,6 +1,6 @@
 <?php
 /**
- * The raw implementation of the item-list--view-challenge template
+ * The raw implementation of the select-article--view-challenge template
  *
  * @var array $items
  *   The Node objects that were retrived in >>
@@ -16,6 +16,7 @@ $break = 'point';
   <?php foreach($items as $node): ?>
   <div class="node">
     <?php print $node; ?>
+    <?php //drupal_render(node_view(node_load(14),'teaser'));  ?>
   </div>
   <?php endforeach; ?>
 </div>
