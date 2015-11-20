@@ -1,18 +1,16 @@
 <?php
   class NextNodeFindQuery extends EntityFieldQuery {
 
-    public function __contruct() {
+    public function __construct() {
       $this->entityCondition('entity_type', 'node');
+      $this->entityCondition('bundle', 'article');
+      $this->propertyOrderBy('created');
     }
 
-    public function select_article($nodeId) {
-      $this->propertyCondition('nid', $nodeId);
-
-      if (!node_load($nodeId + 1)) {
-        $this->propertyCondition('nid',1);
-      } else {
-        $this->propertyCondition('nid', $nodeId + 1);
-      }
+    public function filterByRelatedNode($nodeId) {
+      $node = node_load($nodeId);
+      $date = $node->created;
+      $this->propertyCondition('created', $date, '>');
     }
 
     public function getResults() {
@@ -40,49 +38,23 @@ function view_challenge_menu() {
   return $items;
 }
 
-
-/**
- * Custom Content Function to select article from user input
- */
-function view_challenge_contents() {
-  $nodes = array();
-  $user_input = variable_get('view_challenge_select_article', 3);
-
-//  $query = new NextNodeFindQuery();
-//  $query->select_article($user_input);
-//  $query_result = $query->getResults();
-
-  $query = new EntityFieldQuery();
-  $query
-    ->entityCondition('entity_type', 'node')
-    ->propertyCondition('nid', $user_input)
-    ->propertyCondition('nid', $user_input + 1);
-  $qr = $query->execute();
-  $query_result = $qr['node'];
-
-  if ($query_result != null) {
-    $ids = array_keys($query_result);
-    $nodes = entity_load('node', $ids);
-  }
-
-  return $nodes;
-}
-
-
 /**
  * Implements hook_form().
  *
  * User inputs a number to pull up a node
  */
 function view_challenge_form($form, &$form_state) {
-  $form['user_selected_node'] = array(
+  $form['user_selected_article'] = array(
     '#type' => 'textfield',
     '#title' => t('Choose a post number to view'),
-    '#default_value' => variable_get('view_challenge_select_article', 3),
     '#size' => 2,
     '#maxlength' => 2,
     '#description' => t('The maximum number of links to display in the block.'),
     '#required' => TRUE
+  );
+  $form['submit_btn'] = array(
+    '#type' => 'submit',
+    '#value' => 'Submit'
   );
   return $form;
 }
@@ -95,16 +67,22 @@ function view_challenge_form($form, &$form_state) {
  *
  */
 function view_challenge_form_validate($form, &$form_state) {
-  if (!empty($form_state['value'])){
-    $select_node = $form_state['value']['user_selected_node'];
+  if (empty($form_state['value']['user_selected_article'])) {
+    $select_node = $form_state['value']['user_selected_article'];
 
     if (!is_numeric($select_node)) {
-      form_set_error('view_challenge_select_article',
+      form_set_error('user_selected_article',
         t('You must enter a number for the maximum number of posts to display.'));
 
     } elseif ($select_node <= 0) {
-      form_set_error('view_challenge_select_article',
+      form_set_error('user_selected_article',
         t('Maximum number of posts to display must be positive'));
+    } else {
+      $node = node_load($select_node);
+      if (empty($node)) {
+        form_set_error('user_selected_article',
+          t("Article doesn't exist"));
+      }
     }
   }
 }
@@ -116,34 +94,6 @@ function view_challenge_form_validate($form, &$form_state) {
  *
  */
 function _view_challenge_page() {
-
-  ///////////////////////////////////////////////////
-  // Get the User Selected Article and build display
-  ///////////////////////////////////////////////////
-  $query_result = view_challenge_contents();
-
-  $items = array();
-
-  foreach($query_result as $node) {
-    $items[] = l("Post #".$node->nid." ".$node->title, 'node/'.$node->nid);
-  }
-
-  ///////////////////////////////////////////////////
-  // Get Total amount of Articles, if user input is
-  // greater than the biggest node id, display a
-  // error message
-  ///////////////////////////////////////////////////
-  $query = new EntityFieldQuery();
-  $query->entityCondition('entity_type', 'node');
-  $result = $query->execute();
-//  $query = new NextNodeFindQuery();
-//  $result = $query->getResults();
-
-  if (count($items) < 2) {
-    $items = array('Post does not exist, please choose a number equal to or '.
-      'lower than '.count($result['node']));
-  }
-
   ///////////////////////////////////////////////////
   // Build a form
   ///////////////////////////////////////////////////
@@ -153,14 +103,48 @@ function _view_challenge_page() {
   );
   $form = drupal_build_form('view_challenge_form', $form_state);
   $form_errors = form_set_error();
+  $items = array();
 
-  if (!empty($form_errors)) {
-    $items = array('No article is available');
+  /**
+   * submitted with no errors
+   * submitted with errors
+   * not submitted no errors
+   * not submitted with errors
+   */
+
+  if ($form_state['submitted'] == true && empty($form_errors)) {
+      $node_set = array();
+      $select_article_form_input = $form_state['values']['user_selected_article'];
+      $query = new NextNodeFindQuery();
+      $query->filterByRelatedNode($select_article_form_input);
+      $query->range(0, 2);
+      $query_result = $query->getResults();
+
+      if ($query_result != null) {
+        $ids = array_keys($query_result);
+        $node_set = entity_load('node', $ids);
+      }
+
+      $node = node_load($select_article_form_input);
+      array_push($node_set, $node);
+
+      foreach($node_set as $node) {
+        $items[] = l("Post #".$node->nid." ".$node->title, 'node/'.$node->nid);
+      }
+
+  }
+  elseif ($form_state['submitted'] == true && !empty($form_errors)) {
+    //view_challenge_form_validate('user_selected_article', $form_state);
+    $items = array('Submitted but form errors');
+  }
+  elseif ($form_state['submitted'] == false && empty($form_errors)) {
+    $items = array('Please choose an article to view');
+  }
+  elseif ($form_state['submitted'] == false && !empty($form_errors)) {
+    $items = array($form_errors);
   }
 
-  ///////////////////////////////////////////////////
-  // Page items
-  ///////////////////////////////////////////////////
+
   $page_array['view_challenge_arguments'] = array(
     '#title' => t('All posts from the last week'),
     '#items' => $items,
@@ -189,3 +173,11 @@ function view_challenge_theme($existing, $type, $theme, $path) {
     )
   );
 }
+
+/** THINGS TODO
+ * handle the form cases
+ * enity field query with no results, but node did successfully load
+ * clean up copy and pasted code
+ * variable naming
+ * code documentation - describe why things happen
+ */

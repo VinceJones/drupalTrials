@@ -16,7 +16,6 @@ $break = 'point';
   <?php foreach($items as $node): ?>
   <div class="node">
     <?php print $node; ?>
-    <?php //drupal_render(node_view(node_load(14),'teaser'));  ?>
   </div>
   <?php endforeach; ?>
 </div>
